@@ -5,6 +5,122 @@ import tensorflow as tf
 from random import shuffle
 import tqdm
 
+acc = 0.02
+Xl = np.arange(acc, 1, acc)
+Yl = np.arange(acc, 1, acc)
+X, Y = np.meshgrid(Xl, Yl)
+R = np.sqrt((X-0.5)**2+(Y-0.5)**2)
+Z = (np.sin(R*10)+1.0)/4.0+0.25
+data_train = []
+for i in range(len(Z)):
+    for j in range(len(Z[i])):
+        data_train.append((X[i][j],Y[i][j],Z[i][j]))
+#shuffle(data_train)
+x_train = np.array([[data[0],data[1]] for data in data_train])
+y_train = np.array([[data[2]] for data in data_train])
+
+tfconfig = tf.ConfigProto(device_count={'GPU': 0})
+sess = tf.Session(config=tfconfig)
+x_input = tf.placeholder(tf.float32, shape=x_train.shape, name='x_input') #(1,2)
+y_input = tf.placeholder(tf.float32, name='y_input') 
+initializer = None#tf.random_uniform() #tf.constant_initializer(1.0)
+y_value = tf.layers.dense(inputs=x_input, units=512, activation=tf.nn.relu,
+        kernel_initializer=initializer, bias_initializer=tf.constant_initializer(1.0))
+#y_value = tf.layers.dense(inputs=y_value, units=1, activation=tf.nn.relu, 
+#        kernel_initializer=initializer, bias_initializer=tf.constant_initializer(1.0))
+y_value = tf.layers.dense(inputs=y_value, units=1, activation=None,#tf.nn.softmax, 
+        kernel_initializer=initializer, bias_initializer=tf.constant_initializer(1.0))
+print(len(tf.trainable_variables()))
+w_value = [v for v in tf.trainable_variables()][0]
+b_value = [v for v in tf.trainable_variables()][1]
+loss_op = tf.reduce_mean(tf.pow(y_input-y_value, 2))
+train_op= tf.train.AdamOptimizer(0.01).minimize(loss_op) # tf.train.AdamOptimizer GradientDescentOptimizer
+gradw_op= tf.gradients(loss_op, w_value) 
+gradb_op= tf.gradients(loss_op, b_value) 
+init = tf.global_variables_initializer() 
+sess.run(init) 
+
+lossalls = []
+lossis   = []
+y_preds  = []
+for it in tqdm.tqdm(range(10000)): 
+    i = it%len(x_train)
+    #w, b, y, gradw, gradb, loss = sess.run([w_value, b_value, y_value, gradw_op, gradb_op, loss_op], feed_dict={x_input: x_train[i].reshape((1,2)), y_input: y_train[i]})
+    w, b, y, gradw, gradb, loss = sess.run([w_value, b_value, y_value, gradw_op, gradb_op, loss_op], feed_dict={x_input: x_train, y_input: y_train})
+    pflag = False
+    if 0:
+        lossref  = pow((y-y_train[i]),2).mean(axis=None)
+        gradref0 = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])*x_train[i][0]
+        gradref1 = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])*x_train[i][1]
+        gradrefb = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])
+        tolerance = 0.00001
+        if np.abs(loss-lossref) > tolerance:
+            print('lossref',lossref)
+            print('loss',loss)
+            pflag = True
+        if np.abs(gradw[0][0]-gradref0) > tolerance:
+            print('gradref0',gradref0)
+            print('gradw0',gradw[0][0])
+            pflag = True
+        if np.abs(gradw[0][1]-gradref1) > tolerance:
+            print('gradref1',gradref1)
+            print('gradw1',gradw[0][1])
+            pflag = True
+        if np.abs(gradb[0]-gradrefb) > tolerance:
+            print('gradrefb',gradrefb)
+            print('gradb',gradb[0])
+            pflag = True
+    if pflag:
+        print("epoch: {} \t x: {} \t xr:  \t yt: {}".format(it, x_train[i], y_train[i])) #, x_train[i].reshape((2,1)), y_train[i])) 
+        print("epoch: {} \t w: {} \t b: {} \t y: {} \t gradw: {} \t gradb: {} \t loss: {}".format(it, w, b, y, gradw, gradb, loss))
+        print('')
+    #sess.run([train_op], feed_dict={x_input: x_train[i].reshape((1,2)), y_input: y_train[i]})
+    sess.run([train_op], feed_dict={x_input: x_train, y_input: y_train})
+
+    #y_preds.clear()
+    #for j in range(len(x_train)):
+    #    y_pred = sess.run([y_value], feed_dict={x_input: x_train[j].reshape((1,2))}) 
+    #    y_preds.append(y_pred)
+    #y_predsarray=np.array(y_preds)
+    y_predsarray=np.array(y)
+    #print(y_train.shape)
+    #print(y_predsarray.shape)
+    lossall = ((y_train-y_predsarray)**2).mean(axis=None)
+    #print(lossall)
+    lossalls.append(lossall)
+    lossis.append(loss)
+sess.close()
+
+start = 0
+plt.plot(np.arange(start, len(lossalls), 1),lossalls[start:],color='r',alpha=0.5)
+plt.plot(np.arange(start, len(lossis), 1),lossis[start:],color='b',alpha=0.5)
+Z0loss = ((Z)**2).mean(axis=None)
+plt.axhline(y=Z0loss, linewidth=0.5, color='k')
+plt.axhline(y=0.03, linewidth=0.5, color='k')
+plt.axhline(y=0.02, linewidth=0.5, color='k')
+plt.axhline(y=0.01, linewidth=0.5, color='k')
+print(Z0loss)
+print(lossalls[-20:])
+print(lossalls[:10])
+
+ax  = Axes3D(plt.figure())
+ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow', alpha=0.2) 
+print(y_predsarray.shape)
+#print(y_predsarray)
+y = y_predsarray.reshape(Z.shape)
+axp = Axes3D(plt.figure())
+axp.plot_surface(X, Y, y, rstride=1, cstride=1, cmap='rainbow', alpha=0.8) 
+plt.show()
+
+exit()
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import tensorflow as tf 
+from random import shuffle
+import tqdm
+
 Xl = np.arange(0.1, 1, 0.1)
 Yl = np.arange(0.1, 1, 0.1)
 X, Y = np.meshgrid(Xl, Yl)
