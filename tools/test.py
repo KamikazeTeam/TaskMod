@@ -5,7 +5,7 @@ import tensorflow as tf
 from random import shuffle
 import tqdm
 
-acc = 0.02
+acc = 0.05
 Xl = np.arange(acc, 1, acc)
 Yl = np.arange(acc, 1, acc)
 X, Y = np.meshgrid(Xl, Yl)
@@ -24,17 +24,19 @@ sess = tf.Session(config=tfconfig)
 x_input = tf.placeholder(tf.float32, shape=x_train.shape, name='x_input') #(1,2)
 y_input = tf.placeholder(tf.float32, name='y_input') 
 initializer = None#tf.random_uniform() #tf.constant_initializer(1.0)
-y_value = tf.layers.dense(inputs=x_input, units=512, activation=tf.nn.relu,
+m_value = tf.layers.dense(inputs=x_input, units=2, activation=tf.nn.relu,
         kernel_initializer=initializer, bias_initializer=tf.constant_initializer(1.0))
 #y_value = tf.layers.dense(inputs=y_value, units=1, activation=tf.nn.relu, 
 #        kernel_initializer=initializer, bias_initializer=tf.constant_initializer(1.0))
-y_value = tf.layers.dense(inputs=y_value, units=1, activation=None,#tf.nn.softmax, 
+y_value = tf.layers.dense(inputs=m_value, units=1, activation=None,#tf.nn.softmax, 
         kernel_initializer=initializer, bias_initializer=tf.constant_initializer(1.0))
 print(len(tf.trainable_variables()))
 w_value = [v for v in tf.trainable_variables()][0]
 b_value = [v for v in tf.trainable_variables()][1]
+w2_value = [v for v in tf.trainable_variables()][2]
+b2_value = [v for v in tf.trainable_variables()][3]
 loss_op = tf.reduce_mean(tf.pow(y_input-y_value, 2))
-train_op= tf.train.AdamOptimizer(0.01).minimize(loss_op) # tf.train.AdamOptimizer GradientDescentOptimizer
+train_op= tf.train.AdamOptimizer(0.21).minimize(loss_op) # tf.train.AdamOptimizer GradientDescentOptimizer
 gradw_op= tf.gradients(loss_op, w_value) 
 gradb_op= tf.gradients(loss_op, b_value) 
 init = tf.global_variables_initializer() 
@@ -43,37 +45,45 @@ sess.run(init)
 lossalls = []
 lossis   = []
 y_preds  = []
-for it in tqdm.tqdm(range(10000)): 
+for it in tqdm.tqdm(range(100000)): 
     i = it%len(x_train)
-    #w, b, y, gradw, gradb, loss = sess.run([w_value, b_value, y_value, gradw_op, gradb_op, loss_op], feed_dict={x_input: x_train[i].reshape((1,2)), y_input: y_train[i]})
-    w, b, y, gradw, gradb, loss = sess.run([w_value, b_value, y_value, gradw_op, gradb_op, loss_op], feed_dict={x_input: x_train, y_input: y_train})
-    pflag = False
-    if 0:
-        lossref  = pow((y-y_train[i]),2).mean(axis=None)
-        gradref0 = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])*x_train[i][0]
-        gradref1 = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])*x_train[i][1]
-        gradrefb = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])
-        tolerance = 0.00001
-        if np.abs(loss-lossref) > tolerance:
-            print('lossref',lossref)
-            print('loss',loss)
-            pflag = True
-        if np.abs(gradw[0][0]-gradref0) > tolerance:
-            print('gradref0',gradref0)
-            print('gradw0',gradw[0][0])
-            pflag = True
-        if np.abs(gradw[0][1]-gradref1) > tolerance:
-            print('gradref1',gradref1)
-            print('gradw1',gradw[0][1])
-            pflag = True
-        if np.abs(gradb[0]-gradrefb) > tolerance:
-            print('gradrefb',gradrefb)
-            print('gradb',gradb[0])
-            pflag = True
-    if pflag:
-        print("epoch: {} \t x: {} \t xr:  \t yt: {}".format(it, x_train[i], y_train[i])) #, x_train[i].reshape((2,1)), y_train[i])) 
-        print("epoch: {} \t w: {} \t b: {} \t y: {} \t gradw: {} \t gradb: {} \t loss: {}".format(it, w, b, y, gradw, gradb, loss))
+    y, loss = sess.run([y_value, loss_op], feed_dict={x_input: x_train, y_input: y_train})
+    if 0:#it%1 == 0:
+        #w, b, y, gradw, gradb, loss = sess.run([w_value, b_value, y_value, gradw_op, gradb_op, loss_op], feed_dict={x_input: x_train[i].reshape((1,2)), y_input: y_train[i]})
+        w, b, gradw, gradb = sess.run([w_value, b_value, gradw_op, gradb_op], feed_dict={x_input: x_train, y_input: y_train})
+        w2, b2 = sess.run([w2_value, b2_value], feed_dict={x_input: x_train, y_input: y_train})
+        print('w',w)
+        print('b',b)
+        print('w2',w2)
+        print('b2',b2)
         print('')
+        pflag = True
+        if 0:
+            lossref  = pow((y-y_train[i]),2).mean(axis=None)
+            gradref0 = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])*x_train[i][0]
+            gradref1 = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])*x_train[i][1]
+            gradrefb = 2*(w[0]*x_train[i][0]+w[1]*x_train[i][1]+b-y_train[i])
+            tolerance = 0.00001
+            if np.abs(loss-lossref) > tolerance:
+                print('lossref',lossref)
+                print('loss',loss)
+                pflag = True
+            if np.abs(gradw[0][0]-gradref0) > tolerance:
+                print('gradref0',gradref0)
+                print('gradw0',gradw[0][0])
+                pflag = True
+            if np.abs(gradw[0][1]-gradref1) > tolerance:
+                print('gradref1',gradref1)
+                print('gradw1',gradw[0][1])
+                pflag = True
+            if np.abs(gradb[0]-gradrefb) > tolerance:
+                print('gradrefb',gradrefb)
+                print('gradb',gradb[0])
+                pflag = True
+        if pflag:
+            print("epoch: {} \t x: {} \t xr:  \t yt: {}".format(it, x_train[i], y_train[i])) #, x_train[i].reshape((2,1)), y_train[i])) 
+            print("epoch: {} \t w: {} \t b: {} \t y: {} \t gradw: {} \t gradb: {} \t loss: {}".format(it, w, b, y, gradw, gradb, loss))
+            print('')
     #sess.run([train_op], feed_dict={x_input: x_train[i].reshape((1,2)), y_input: y_train[i]})
     sess.run([train_op], feed_dict={x_input: x_train, y_input: y_train})
 
@@ -89,7 +99,6 @@ for it in tqdm.tqdm(range(10000)):
     #print(lossall)
     lossalls.append(lossall)
     lossis.append(loss)
-sess.close()
 
 start = 0
 plt.plot(np.arange(start, len(lossalls), 1),lossalls[start:],color='r',alpha=0.5)
@@ -99,9 +108,15 @@ plt.axhline(y=Z0loss, linewidth=0.5, color='k')
 plt.axhline(y=0.03, linewidth=0.5, color='k')
 plt.axhline(y=0.02, linewidth=0.5, color='k')
 plt.axhline(y=0.01, linewidth=0.5, color='k')
+plt.axhline(y=0.008, linewidth=0.5, color='k')
+plt.axhline(y=0.006, linewidth=0.5, color='k')
+plt.axhline(y=0.004, linewidth=0.5, color='k')
+plt.axhline(y=0.002, linewidth=0.5, color='k')
+plt.axhline(y=0.00, linewidth=0.5, color='k')
+plt.ylim([-0.01,0.1])
 print(Z0loss)
-print(lossalls[-20:])
 print(lossalls[:10])
+print(lossalls[-20:])
 
 ax  = Axes3D(plt.figure())
 ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow', alpha=0.2) 
@@ -110,9 +125,77 @@ print(y_predsarray.shape)
 y = y_predsarray.reshape(Z.shape)
 axp = Axes3D(plt.figure())
 axp.plot_surface(X, Y, y, rstride=1, cstride=1, cmap='rainbow', alpha=0.8) 
-plt.show()
 
+if 0:
+    m = sess.run([m_value], feed_dict={x_input: x_train, y_input: y_train})
+    w2, b2 = sess.run([w2_value, b2_value], feed_dict={x_input: x_train, y_input: y_train})
+
+    wmin,wmax = np.amin(w2),np.amax(w2)
+    print(wmin,wmax)
+    numbs = 2
+    wacc = 0.5#(wmax-wmin)/numbs
+    w21l = np.arange(wmin-10, wmax+10, wacc)
+    w22l = np.arange(wmin-10, wmax+10, wacc)
+    w23l = np.arange(wmin-10, wmax+10, wacc)
+    #w24l = np.arange(wmin, wmax, wacc)
+    #w21l = np.arange(wacc, 3, wacc)
+    #w22l = np.arange(wacc, 3, wacc)
+    #w23l = np.arange(wacc, 3, wacc)
+    #w24l = np.arange(wacc, 3, wacc)
+    #w23,w24 = np.meshgrid(w23l, w24l)
+    w22,w23 = np.meshgrid(w22l, w23l)
+    w2l = []
+    for w21e in w21l:
+        for w22e in w22l:
+            for w23e in w23l:
+                #for w24e in w24l:
+                w2l.append([[w21e],[w22e],[w23e]])#,[w24e]])
+    #w2l = np.array(w2l)
+    lossl = []
+    for e in tqdm.tqdm(range(len(w2l))):
+        #print(w2e)
+        w2e = np.array(w2l[e])
+        #print(w2e)
+        #print(w2e.shape)
+        #print(m[0])
+        #print(m[0].shape)
+        #print(w2)
+        #print(w2.shape)
+        #print(b2)
+        #print(b2.shape)
+        ye = np.dot(m[0],w2e)+b2
+        #print(ye)
+        #print(ye.shape)
+        #exit()
+        losse = pow((ye-y_train),2).mean(axis=None)
+        #exit()
+        lossl.append(losse)
+    for i in range(len(w21l)):
+        if i%(int(len(w21l)/5))!=0: 
+            #print(len(w2l)/5)
+            #print(i)
+            continue
+        #print(len(lossl))
+        #print(len(w2l))
+        lenth = len(w22l)*len(w23l)
+        print(w2l[i*lenth])
+        losslc= lossl[i*lenth:(i+1)*lenth]
+        losslc=np.array(losslc)
+        print(losslc.shape)
+        print(w22.shape)
+        losslc=losslc.reshape(w22.shape)
+        print(losslc.shape)
+        print(w22.shape)
+        axmap = Axes3D(plt.figure())
+        axmap.plot_surface(w22, w23, losslc, rstride=1, cstride=1, cmap='rainbow', alpha=0.8) 
+
+
+
+plt.show()
+sess.close()
 exit()
+
+
 
 import numpy as np
 import matplotlib.pyplot as plt
