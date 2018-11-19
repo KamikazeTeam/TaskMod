@@ -27,27 +27,28 @@ class Model:
             self.h_values.append(h_value)
         self.y_value = tf.layers.dense(inputs=h_value, units=1, activation=None, kernel_initializer=initializer, bias_initializer=initializer)#tf.nn.softmax
         self.h_values.append(self.y_value)
-        print(len(tf.trainable_variables()))#################
-        self.w_values = []
-        self.b_values = []
-        for i in range(0,len(tf.trainable_variables()),2):
-            w_value = [v for v in tf.trainable_variables()][i]
-            b_value = [v for v in tf.trainable_variables()][i+1]
-            self.w_values.append(w_value)
-            self.b_values.append(b_value)
-        self.loss_op  = tf.reduce_mean(tf.pow(self.y_input-self.y_value, 2))#################
-        self.gradh_ops= []
-        for h_value in self.h_values:
-            gradh_op = tf.gradients(self.loss_op, h_value)
-            self.gradh_ops.append(gradh_op)
-        self.gradw_ops= []
-        for w_value in self.w_values:
-            gradw_op = tf.gradients(self.loss_op, w_value)
-            self.gradw_ops.append(gradw_op)
-        self.gradb_ops= []
-        for b_value in self.b_values:
-            gradb_op = tf.gradients(self.loss_op, b_value)
-            self.gradb_ops.append(gradb_op)
+        self.loss_op  = tf.reduce_mean(tf.pow(self.y_input-self.y_value, 2))
+        print(len(tf.trainable_variables()))
+        if 0:
+            self.w_values = []
+            self.b_values = []
+            for i in range(0,len(tf.trainable_variables()),2):
+                w_value = [v for v in tf.trainable_variables()][i]
+                b_value = [v for v in tf.trainable_variables()][i+1]
+                self.w_values.append(w_value)
+                self.b_values.append(b_value)
+            self.gradh_ops= []
+            for h_value in self.h_values:
+                gradh_op = tf.gradients(self.loss_op, h_value)
+                self.gradh_ops.append(gradh_op)
+            self.gradw_ops= []
+            for w_value in self.w_values:
+                gradw_op = tf.gradients(self.loss_op, w_value)
+                self.gradw_ops.append(gradw_op)
+            self.gradb_ops= []
+            for b_value in self.b_values:
+                gradb_op = tf.gradients(self.loss_op, b_value)
+                self.gradb_ops.append(gradb_op)
 ###########################################################################
 
 ###########################################################################
