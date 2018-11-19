@@ -3,186 +3,142 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import tensorflow as tf 
 from random import shuffle
-import tqdm, sys, os, warnings
+import tqdm, sys, os, warnings, random
 warnings.filterwarnings('ignore')
+###########################################################################
+class Model:
+    def __init__(self,x_train,y_train,unitslist):
+        self.unitslist = unitslist
+        self.x_input = tf.placeholder(tf.float32, shape=x_train.shape, name='x_input')
+        self.y_input = tf.placeholder(tf.float32, name='y_input')
+        initializer = None#tf.random_uniform() #tf.constant_initializer(1.0)
+        self.h_values = []
+        h_value = self.x_input
+        self.h_values.append(h_value)
+        for units in unitslist[1:len(unitslist)-1]:
+            #h_valueo= tf.identity(h_value)
+            h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
+            h_value = tf.layers.batch_normalization(inputs=h_value,scale=False,training=True)#tf.contrib.layers.batch_norm(h_value)
+            #h_value = tf.nn.relu(h_value)
+            #h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
+            #h_value = tf.contrib.layers.batch_norm(h_value)#tf.layers.batch_normalization
+            #h_value = tf.nn.relu(h_value)
+            #h_value = h_value + h_valueo
+            self.h_values.append(h_value)
+        self.y_value = tf.layers.dense(inputs=h_value, units=1, activation=None, kernel_initializer=initializer, bias_initializer=initializer)#tf.nn.softmax
+        self.h_values.append(self.y_value)
+        print(len(tf.trainable_variables()))#################
+        self.w_values = []
+        self.b_values = []
+        for i in range(0,len(tf.trainable_variables()),2):
+            w_value = [v for v in tf.trainable_variables()][i]
+            b_value = [v for v in tf.trainable_variables()][i+1]
+            self.w_values.append(w_value)
+            self.b_values.append(b_value)
+        self.loss_op  = tf.reduce_mean(tf.pow(self.y_input-self.y_value, 2))#################
+        self.gradh_ops= []
+        for h_value in self.h_values:
+            gradh_op = tf.gradients(self.loss_op, h_value)
+            self.gradh_ops.append(gradh_op)
+        self.gradw_ops= []
+        for w_value in self.w_values:
+            gradw_op = tf.gradients(self.loss_op, w_value)
+            self.gradw_ops.append(gradw_op)
+        self.gradb_ops= []
+        for b_value in self.b_values:
+            gradb_op = tf.gradients(self.loss_op, b_value)
+            self.gradb_ops.append(gradb_op)
+###########################################################################
 
-acc = 0.025
-Xl = np.arange(acc, 1, acc)
-Yl = np.arange(acc, 1, acc)
-X, Y = np.meshgrid(Xl, Yl)
-R = np.sqrt((X-0.5)**2+(Y-0.5)**2)
-Z = (np.sin(R*10)+1.0)/4.0+0.25
-data_train = []
-for i in range(len(Z)):
-    for j in range(len(Z[i])):
-        data_train.append((X[i][j],Y[i][j],Z[i][j]))
-#shuffle(data_train)
-x_train = np.array([[data[0],data[1]] for data in data_train])
-y_train = np.array([[data[2]] for data in data_train])
-
-tfconfig = tf.ConfigProto(device_count={'GPU': 0})
-sess = tf.Session(config=tfconfig)
-tf.set_random_seed(int(sys.argv[1]))
-x_input = tf.placeholder(tf.float32, shape=x_train.shape, name='x_input')
-y_input = tf.placeholder(tf.float32, name='y_input')
-initializer = None#tf.random_uniform() #tf.constant_initializer(1.0)
-
-unitslist= [2,8,8,8,8,8,1]
-h_values = []
-h_value = x_input
-h_values.append(h_value)
-for units in unitslist[1:len(unitslist)-1]:
-    h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
-    h_values.append(h_value)
-y_value = tf.layers.dense(inputs=h_value, units=1, activation=None, kernel_initializer=initializer, bias_initializer=initializer)#tf.nn.softmax
-h_values.append(y_value)
-print(len(tf.trainable_variables()))
-w_values = []
-b_values = []
-for i in range(0,len(tf.trainable_variables()),2):
-    w_value = [v for v in tf.trainable_variables()][i]
-    b_value = [v for v in tf.trainable_variables()][i+1]
-    w_values.append(w_value)
-    b_values.append(b_value)
-loss_op  = tf.reduce_mean(tf.pow(y_input-y_value, 2))
-dt       = 0.1
-opt      = tf.train.AdamOptimizer(dt)# AdamOptimizer GradientDescentOptimizer
-train_op = opt.minimize(loss_op)
-gradh_ops= []
-for h_value in h_values:
-    gradh_op = tf.gradients(loss_op, h_value)
-    gradh_ops.append(gradh_op)
-gradw_ops= []
-for w_value in w_values:
-    gradw_op = tf.gradients(loss_op, w_value)
-    gradw_ops.append(gradw_op)
-gradb_ops= []
-for b_value in b_values:
-    gradb_op = tf.gradients(loss_op, b_value)
-    gradb_ops.append(gradb_op)
-init = tf.global_variables_initializer() 
-sess.run(init) 
-
-maxstep  = 1000
-outitvl  = 3
-expdir   = str(acc)+':'+str(unitslist)+':'+str(dt)+':'+str(maxstep)+'/'
-if not os.path.exists(expdir): os.makedirs(expdir)
-lossalls = []
-y_preds  = []
-for it in tqdm.tqdm(range(maxstep)): 
-    #loss = sess.run([loss_op], feed_dict={x_input: x_train, y_input: y_train})[0]
-    y, loss = sess.run([y_value, loss_op], feed_dict={x_input: x_train, y_input: y_train})
-    lossalls.append(loss)
-    if 0:#it%int(maxstep/outitvl)==0:
-        if 1:
-            hs = []
-            for h_value in h_values:
-                h = sess.run([h_value], feed_dict={x_input: x_train, y_input: y_train})
-                hs.append(h)
-            ws = []
-            for w_value in w_values:
-                w = sess.run([w_value], feed_dict={x_input: x_train, y_input: y_train})
-                ws.append(w)
-            bs = []
-            for b_value in b_values:
-                b = sess.run([b_value], feed_dict={x_input: x_train, y_input: y_train})
-                bs.append(b)
-        if 0:
-            gradhs = []
-            for gradh_op in gradh_ops:
-                gradh = sess.run([gradh_op], feed_dict={x_input: x_train, y_input: y_train})
-                gradhs.append(gradh)
-            gradws = []
-            for gradw_op in gradw_ops:
-                gradw = sess.run([gradw_op], feed_dict={x_input: x_train, y_input: y_train})
-                gradws.append(gradw)
-            gradbs = []
-            for gradb_op in gradb_ops:
-                gradb = sess.run([gradb_op], feed_dict={x_input: x_train, y_input: y_train})
-                gradbs.append(gradb)
-        if 0:#it==maxstep-1:
-            print('hs',hs)
-            print('ws',ws)
-            print('bs',bs)
-            print('gradhs',gradhs)
-            print('gradws',gradws)
-            print('gradbs',gradbs)
-        if 1:#it==maxstep-1:
-            plt.figure(1)
-            plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
-            plt.suptitle('hs')
-            plt.rc('xtick', labelsize=3)
-            plt.rc('ytick', labelsize=3)
-            for i,h in enumerate(hs):
-                for fn in range(unitslist[i]):
-                    datafn = [data[fn] for data in h[0]]
-                    plt.subplot(len(hs),max(unitslist),i*max(unitslist)+fn+1)
-                    plt.hist(datafn, bins=np.arange(min(datafn)-0.1, max(datafn)+0.1, (max(datafn)-min(datafn)+0.2)/20.0), normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
-            plt.savefig(expdir+'hs'+str(sys.argv[1])+'-'+str(int(it/int(maxstep/outitvl)))+".png", figsize=(64, 36), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
-            plt.figure(2)
-            plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
-            plt.suptitle('bs+ws')
-            for i,w in enumerate(ws):
-                for fn in range(unitslist[i]):
-                    datafn = w[0][fn]#[data[fn] for data in w[0]]
-                    plt.subplot(len(ws)+1,max(unitslist)+1,i*(max(unitslist)+1)+fn+1+1)
-                    plt.hist(datafn, bins=np.arange(min(datafn)-0.9, max(datafn)+0.9, (max(datafn)-min(datafn)+1.8)/20.0), normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
-                datafn = bs[i][0]#w[0][fn]#[data[fn] for data in w[0]]
-                plt.subplot(len(ws)+1,max(unitslist)+1,i*(max(unitslist)+1)+1)
-                plt.hist(datafn, bins=np.arange(min(datafn)-0.9, max(datafn)+0.9, (max(datafn)-min(datafn)+1.8)/20.0), normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
-            plt.savefig(expdir+'bs+ws'+str(sys.argv[1])+'-'+str(int(it/int(maxstep/outitvl)))+".png", figsize=(64, 36), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
-        axp = Axes3D(plt.figure(3))
-        Zp  = np.array(y).reshape(Z.shape)
-        axp.plot_surface(X,Y,Zp, rstride=1, cstride=1, cmap='rainbow', alpha=0.8) 
-        plt.savefig(expdir+'pred'+str(sys.argv[1])+'-'+str(int(it/int(maxstep/outitvl)))+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
-
-    sess.run([train_op], feed_dict={x_input: x_train, y_input: y_train})
-
-flossmins = open(expdir+'lossmins','a')
-print(min(lossalls),end=',',file=flossmins)
-flossmins.close()
-flossmins = open(expdir+'lossmins','r')
-lossmins = [float(lossmin) for lossmin in flossmins.read().splitlines()[0].split(",")[:-1]]
-flossmins.close()
-#print(lossmins)
-#print(min(lossalls))
-#print(min(lossmins))
-if lossmins[-1]<=min(lossmins):
-    #print('in')
-    Z0loss = ((Z)**2).mean(axis=None)
-    #print(Z0loss)
-    #print(lossalls[:10])
-    #print(lossalls[-20:])
+###########################################################################
+class Trainer:
+    def __init__(self,x_train,y_train,sess,model,expdir):
+        self.x_train, self.y_train, self.sess, self.model, self.expdir = x_train, y_train, sess, model, expdir
+    def fit(self,dt,maxstep,outitvl):
+        optimizer= tf.train.AdamOptimizer(dt)# AdamOptimizer GradientDescentOptimizer
+        train_op = optimizer.minimize(self.model.loss_op)
+        self.sess.run(tf.global_variables_initializer())
+        lossalls = []
+        for it in tqdm.tqdm(range(maxstep)):
+            loss, _ = self.sess.run([self.model.loss_op, train_op], feed_dict={self.model.x_input: self.x_train, self.model.y_input: self.y_train})
+            lossalls.append(loss)
+        y_preds = self.sess.run([self.model.y_value], feed_dict={self.model.x_input: self.x_train, self.model.y_input: self.y_train})
+        self.sess.close()
+        return lossalls, y_preds
+###########################################################################
+def figlossandpred(lossalls, y_preds, X, Y, Z, expdir, randseed, maxstep, outitvl, ylines, ylim):
     plt.figure(11)
     start = 0
     plt.plot(np.arange(start, len(lossalls), 1),lossalls[start:],color='r',alpha=0.5)
-    plt.axhline(y=Z0loss, linewidth=0.5, color='k')
-    plt.axhline(y=0.03, linewidth=0.5, color='k')
-    plt.axhline(y=0.02, linewidth=0.5, color='k')
-    plt.axhline(y=0.01, linewidth=0.5, color='k')
-    plt.axhline(y=0.008, linewidth=0.5, color='k')
-    plt.axhline(y=0.006, linewidth=0.5, color='k')
-    plt.axhline(y=0.004, linewidth=0.5, color='k')
-    plt.axhline(y=0.002, linewidth=0.5, color='k')
-    plt.axhline(y=0.00, linewidth=0.5, color='k')
-    plt.ylim([0.0,0.04])
+    for yline in ylines:
+        plt.axhline(y=yline, linewidth=0.5, color='k')
+    plt.ylim([0.0,ylim])
     for i in range(outitvl):
-        plt.axvline(x=int(maxstep/outitvl)*(i+1), linewidth=0.5, color='k')
-    plt.savefig(expdir+'loss'+str(sys.argv[1])+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
-    #ax  = Axes3D(plt.figure(12))
-    #ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow', alpha=0.2) 
-    axp = Axes3D(plt.figure(13))
-    Zp  = np.array(y).reshape(Z.shape)
-    axp.plot_surface(X,Y,Zp, rstride=1, cstride=1, cmap='rainbow', alpha=0.8) 
-    plt.savefig(expdir+'pred'+str(sys.argv[1])+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+        xline = int(maxstep/outitvl)*(i+1)
+        plt.axvline(x=xline, linewidth=0.5, color='k')
+    plt.savefig(expdir+'loss'+str(randseed)+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+    axp = Axes3D(plt.figure(12))
+    Zp  = np.array(y_preds).reshape(Z.shape)
+    axp.plot_surface(X,Y,Zp, rstride=1, cstride=1, cmap='rainbow', alpha=0.5) 
+    plt.savefig(expdir+'pred'+str(randseed)+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+def setsession(randseed):
+    tfconfig = tf.ConfigProto(device_count={'GPU': 0})
+    sess = tf.Session(config=tfconfig)
+    random.seed(randseed)
+    np.random.seed(randseed)
+    tf.set_random_seed(randseed)
+    return sess
+def targetfunction(acc,lim,freq,randflag):
+    Xl = np.arange(acc, lim, acc)
+    Yl = np.arange(acc, lim, acc)
+    X, Y = np.meshgrid(Xl, Yl)
+    R = np.sqrt((X-lim/2)**2+(Y-lim/2)**2)
+    Z = (np.sin(R*freq)+1.0)/4.0+0.25
+    data_train = []
+    for i in range(len(Z)):
+        for j in range(len(Z[i])):
+            data_train.append((X[i][j],Y[i][j],Z[i][j]))
+    if randflag: shuffle(data_train)
+    x_train = np.array([[data[0],data[1]] for data in data_train])
+    y_train = np.array([[data[2]] for data in data_train])
+    print('Z0loss:', ((Z)**2).mean(axis=None))
+    return X,Y,Z,x_train,y_train
+###########################################################################
+def main():
+    acc, lim, freq, randflag = 0.025, 2.0, 10.0, False
+    X,Y,Z,x_train,y_train = targetfunction(acc=acc,lim=lim,freq=freq,randflag=randflag)
 
-#plt.show()
-sess.close()
+    randseed = int(sys.argv[1])
+    sess = setsession(randseed)
 
-print(sys.argv[1],':',sys.argv[2])
-if sys.argv[1]==sys.argv[2] or int(sys.argv[1])%100==0:
-    lossmins = open(expdir+'lossmins','r').read().splitlines()[0].split(",")[:-1]
+    unitslist= [2,4,1]
+    model = Model(x_train,y_train,unitslist)
+
+    dt, maxstep, outitvl = 0.1, 1000, 3
+    expdir = str(acc).replace('.','-')+'+'+str(unitslist).replace('[','-').replace(']','-')+'+'+str(dt).replace('.','-')+'+'+str(maxstep)+'/'
+    if not os.path.exists(expdir): os.makedirs(expdir)
+    trainer = Trainer(x_train,y_train,sess,model,expdir)
+    lossalls, y_preds = trainer.fit(dt,maxstep,outitvl)
+
+    flossmins = open(expdir+'lossmins','a')
+    print(min(lossalls),end=',',file=flossmins)
+    flossmins.close()
+    flossmins = open(expdir+'lossmins','r')
+    lossmins = flossmins.read().splitlines()[0].split(",")[:-1]
     lossmins = [float(lossmin) for lossmin in lossmins]
-    plt.figure(111)
-    plt.hist(lossmins, bins=np.arange(0, max(lossmins)+0.001, 0.001), normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
-    plt.savefig(expdir+'lossmins'+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+    flossmins.close()
+    if lossmins[-1]<=min(lossmins) or len(lossmins)<10:
+        ylines, ylim = [0.01,0.005,0.004,0.003,0.002,0.001,0.0005], 0.02
+        figlossandpred(lossalls, y_preds, X, Y, Z, expdir, randseed, maxstep, outitvl, ylines, ylim)
+
+    print(sys.argv[1],':',sys.argv[2])
+    if sys.argv[1]==sys.argv[2] or int(sys.argv[1])%100==0:
+        plt.figure(111)
+        plt.hist(lossmins, bins=np.arange(0, max(lossmins)+0.0001, 0.0001), normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
+        plt.savefig(expdir+'lossmins'+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+        ax = Axes3D(plt.figure(112))
+        ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow', alpha=0.2)
+        plt.savefig(expdir+'gold'+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+
+if __name__ == '__main__':
+    main()
