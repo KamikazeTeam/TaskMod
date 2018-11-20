@@ -2,5 +2,5 @@
 
 for ((i = 1; i <= $1; i++ ))
 do
-  python BPobs.py $i $1
+  python BPobs.py $i $1 $2
 done
