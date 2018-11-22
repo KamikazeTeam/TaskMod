@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import tensorflow as tf 
 from random import shuffle
+from sklearn.preprocessing import scale,normalize
 import tqdm, sys, os, warnings, random
 warnings.filterwarnings('ignore')
 ###########################################################################
@@ -15,13 +16,16 @@ class Model:
         self.h_values = []
         h_value = self.x_input
         self.h_values.append(h_value)
-        for units in unitslist[1:len(unitslist)-1]:
+        for i,units in enumerate(unitslist[1:len(unitslist)-1]):
+            if i==0:
+                h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
+                h_value = tf.layers.batch_normalization(inputs=h_value,scale=False,training=True)#tf.contrib.layers.batch_norm(h_value)
             #h_valueo= tf.identity(h_value)
             h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
             h_value = tf.layers.batch_normalization(inputs=h_value,scale=False,training=True)#tf.contrib.layers.batch_norm(h_value)
             #h_value = tf.nn.relu(h_value)
-            #h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
-            #h_value = tf.contrib.layers.batch_norm(h_value)#tf.layers.batch_normalization
+            h_value = tf.layers.dense(inputs=h_value, units=units, activation=tf.nn.relu, kernel_initializer=initializer, bias_initializer=initializer)
+            h_value = tf.layers.batch_normalization(inputs=h_value,scale=False,training=True)
             #h_value = tf.nn.relu(h_value)
             #h_value = h_value + h_valueo
             self.h_values.append(h_value)
@@ -81,7 +85,7 @@ def figlossandpred(lossalls, y_preds, X, Y, Z, expdir, randseed, maxstep, outitv
     plt.savefig(expdir+'loss'+str(randseed)+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
     axp = Axes3D(plt.figure(12))
     Zp  = np.array(y_preds).reshape(Z.shape)
-    axp.plot_surface(X,Y,Zp, rstride=1, cstride=1, cmap='rainbow', alpha=0.3) 
+    axp.plot_surface(X,Y,Zp, rstride=1, cstride=1, cmap='rainbow', alpha=0.6) 
     plt.savefig(expdir+'pred'+str(randseed)+".png", figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
 def setsession(randseed):
     tfconfig = tf.ConfigProto(device_count={'GPU': 0})
@@ -90,12 +94,27 @@ def setsession(randseed):
     np.random.seed(randseed)
     tf.set_random_seed(randseed)
     return sess
-def targetfunction(acc,lim,freq,randflag):
-    Xl = np.arange(acc, lim, acc)
-    Yl = np.arange(acc, lim, acc)
+def targetfunction(acc,lim,cnum,freq,randflag):
+    Xl = sorted(np.random.uniform(low=-lim, high=lim, size=(acc,)))#np.linspace(-lim, lim, acc)
+    Yl = sorted(np.random.uniform(low=-lim, high=lim, size=(acc,)))
+    Xl = scale(Xl, axis=0, with_mean=True,with_std=True,copy=True)#Xl / np.linalg.norm(Xl)
+    Yl = scale(Yl, axis=0, with_mean=True,with_std=True,copy=True)
     X, Y = np.meshgrid(Xl, Yl)
-    R = np.sqrt((X-lim/2)**2+(Y-lim/2)**2)
-    Z = (np.sin(R*freq)+1.0)/4.0+0.25
+    Rijs, Zijs = [], []
+    xc = np.random.uniform(low=-lim, high=lim, size=(cnum,))
+    yc = np.random.uniform(low=-lim, high=lim, size=(cnum,))
+    xc = scale(xc, axis=0, with_mean=True,with_std=True,copy=True)
+    yc = scale(yc, axis=0, with_mean=True,with_std=True,copy=True)
+    for i in range(cnum):
+        Rij = np.sqrt((X-xc[i])**2+(Y-yc[i])**2)
+        Rijs.append(Rij)
+    for Rij in Rijs:
+        Zij = np.sin(Rij*freq)
+        Zijs.append(Zij)
+    Z  = np.array(Zijs).max(axis=0)######
+    Z = scale(Z, axis=0, with_mean=True,with_std=True,copy=True)
+    #R = np.sqrt((X-lim/2)**2+(Y-lim/2)**2)
+    #Z = (np.sin(R*freq)+1.0)/4.0+0.25
     data_train = []
     for i in range(len(Z)):
         for j in range(len(Z[i])):
@@ -109,23 +128,20 @@ def targetfunction(acc,lim,freq,randflag):
 def main():
     randseed = int(sys.argv[1])
     sess = setsession(randseed)
-    hyps = sys.argv[3].split('|')
+    sep = 'T'
+    sysargv3 = sys.argv[3].replace('|',sep)
+    hyps = sysargv3.split(sep)
     modelname = hyps[0]
-    acc, lim, freq, randflag = float(hyps[1]), float(hyps[2]), 10.0, False
+    acc, lim, cnum, freq, randflag = int(hyps[1]), 1.0, int(hyps[2]), 10.0, False
     unitslist= [int(num) for num in hyps[3].split('-')]
     dt, maxstep, outitvl = float(hyps[4]), int(hyps[5]), 3
-    limmin, limmax, nylines, nlogbins = 5e-5, 5e-2, 10, 50
+    limmin, limmax, nylines, nlogbins = 1e-5, 5e-2, 10, 50
     print(sys.argv[1],':',sys.argv[2],':',sys.argv[3])
-    expdir = sys.argv[3]+'/'#str(acc).replace('.','-')+'+'+str(unitslist).replace('[','-').replace(']','-')+'+'+str(dt).replace('.','-')+'+'+str(maxstep)+'/'
+    expdir = sysargv3+'/'
     if not os.path.exists(expdir): os.makedirs(expdir)
 
-    #acc, lim, freq, randflag = 0.025, 2.0, 10.0, False
-    X,Y,Z,x_train,y_train = targetfunction(acc=acc,lim=lim,freq=freq,randflag=randflag)
-
-    #unitslist= [2,4,1]
+    X,Y,Z,x_train,y_train = targetfunction(acc=acc,lim=lim,cnum=cnum,freq=freq,randflag=randflag)
     model = Model(x_train,y_train,unitslist)
-
-    #dt, maxstep, outitvl = 0.1, 1000, 3
     trainer = Trainer(x_train,y_train,sess,model,expdir)
     lossalls, y_preds = trainer.fit(dt,maxstep,outitvl)
 
@@ -137,27 +153,26 @@ def main():
     lossmins = [float(lossmin) for lossmin in lossmins]
     flossmins.close()
     if lossmins[-1]<=min(lossmins) or len(lossmins)<10:
-        ylines, ylimmin, ylimmax = np.logspace(np.log10(limmin),np.log10(limmax),nylines), limmin, limmax #[1e-2,5e-3,4e-3,3e-3,2e-3,1e-3,5e-4,4e-4,3e-4,2e-4,1e-4]
+        ylines, ylimmin, ylimmax = np.logspace(np.log10(limmin),np.log10(limmax),nylines), limmin, limmax
         figlossandpred(lossalls, y_preds, X, Y, Z, expdir, randseed, maxstep, outitvl, ylines, ylimmin, ylimmax)
-
-    if sys.argv[1]==sys.argv[2] or int(sys.argv[1])%100==0:
+    if sys.argv[1]==sys.argv[2]:# or int(sys.argv[1])%100==0:
         plt.figure(111)
         xlimmin, xlimmax = min(lossmins+[limmin]) ,max(lossmins+[limmax])
         logbins = np.logspace(np.log10(xlimmin),np.log10(xlimmax),nlogbins) #bins = np.arange(xlimmin, xlimmax, 1e-6) #linspace
         plt.hist(lossmins, bins=logbins, normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
         plt.xscale('log')
         numparas = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
-        figname = sys.argv[3]+'|lossmins|'+str(x_train.shape[0])+'+'+str(numparas)+'|'+str(min(lossmins))+'+'+str(np.median(lossmins))+".png"
+        figname = sysargv3+sep+'lossmins'+sep+str(x_train.shape[0])+'+'+str(numparas)+sep+str(min(lossmins))+'+'+str(np.median(lossmins))+".png"
         plt.savefig(figname, figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
         fresults=open('dohypersresults','a')
         print(sys.argv[3]+','+str(x_train.shape[0])+','+str(numparas)+','+str(min(lossmins))+','+str(np.median(lossmins)),file=fresults)
-        fresults.close()
-
-        goldname = str(acc)+'+'+str(lim)+'+'+str(freq)+'gold'+".png"
+        fresults.close()###############
+        goldname = str(acc)+'+'+str(lim)+'+'+str(cnum)+'+'+str(freq)+'gold'+".png"
         if not os.path.exists(goldname):
             ax = Axes3D(plt.figure(112))
-            ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow', alpha=0.2)
+            ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow', alpha=0.8)
             plt.savefig(goldname, figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+            #plt.show()
 
 if __name__ == '__main__':
     main()
