@@ -1,0 +1,160 @@
+import gym, sys, random, tqdm
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+from itertools import cycle
+def s_reshaper(s):
+    return np.reshape(s, (1, 4))
+class SolverA2C:
+    def __init__(self, sess, param_dict_critic, param_dict_actor):
+        self.__init_actor(**param_dict_actor)
+        self.__init_critic(**param_dict_critic)
+        self.session = sess
+        self.session.run(tf.global_variables_initializer())
+    def __init_critic(self, gamma, HL_nodes_critic, adam_learning_rate_critic):
+        self.gamma = gamma
+        self.HL_nodes_critic = HL_nodes_critic
+        self.adam_learning_rate_critic = adam_learning_rate_critic
+
+        self.input_critic = tf.placeholder(tf.float32, [1, 4], name='input_critic')
+        self.target_critic = tf.placeholder(tf.float32, [1, 1], name='target_critic')
+
+        self.W1_critic = tf.Variable(tf.truncated_normal([4, self.HL_nodes_critic]))
+        self.HL_critic = tf.nn.relu(tf.matmul(self.input_critic, self.W1_critic))
+        self.W2_critic = tf.Variable(tf.truncated_normal([self.HL_nodes_critic, 1]))
+
+        self.value_function = tf.matmul(self.HL_critic, self.W2_critic)
+        self.loss_critic = tf.reduce_sum(tf.square(self.target_critic - self.value_function))
+
+        #cl1 = tf.layers.dense(inputs=self.input_critic, units=self.HL_nodes_critic, activation=tf.nn.relu)#, 
+            #kernel_initializer=tf.random_normal_initializer(0., .1), bias_initializer=tf.constant_initializer(0.1))
+        #cl2 = tf.layers.dense(inputs=cl1, units=1, activation=None)#, 
+            #kernel_initializer=tf.random_normal_initializer(0., .1), bias_initializer=tf.constant_initializer(0.1))
+        #self.value_function   = cl2
+        #self.loss_critic      = tf.reduce_sum(tf.square(self.target_critic - self.value_function))
+
+        self.train_critic_ops = tf.train.AdamOptimizer(self.adam_learning_rate_critic).minimize(self.loss_critic)
+    def __init_actor(self, HL_nodes_actor, adam_learning_rate_actor):
+        self.HL_nodes_actor = HL_nodes_actor
+        self.adam_learning_rate_actor = adam_learning_rate_actor
+
+        self.input_actor = tf.placeholder(tf.float32, [1, 4], name='input_actor')
+        self.target_actor = tf.placeholder(tf.float32, [1, 2], name='target_actor')
+
+        self.W1_actor = tf.Variable(tf.truncated_normal([4, self.HL_nodes_actor]))
+        self.HL_actor = tf.nn.relu(tf.matmul(self.input_actor, self.W1_actor))
+        self.W2_actor = tf.Variable(tf.truncated_normal([self.HL_nodes_actor, 2]))
+
+        self.policy = tf.nn.softmax(tf.matmul(self.HL_actor, self.W2_actor))
+        self.loss_actor = tf.reduce_sum( tf.nn.softmax_cross_entropy_with_logits(logits=tf.matmul(self.HL_actor, self.W2_actor), labels=self.target_actor))
+
+        #l1 = tf.layers.dense(inputs=self.input_actor, units=self.HL_nodes_actor, activation=tf.nn.relu)#, 
+            #kernel_initializer=tf.random_normal_initializer(0., .1), bias_initializer=tf.constant_initializer(0.1))
+        #l2 = tf.layers.dense(inputs=l1, units=2, activation=None)#, 
+            #kernel_initializer=tf.random_normal_initializer(0., .1), bias_initializer=tf.constant_initializer(0.1))
+        #self.policy           = tf.nn.softmax(l2)
+        #self.loss_actor       = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=l2, labels=self.target_actor))
+
+        self.train_actor_ops = tf.train.AdamOptimizer(self.adam_learning_rate_actor).minimize(self.loss_actor)
+    def choose_action(self, s):
+        p = self.session.run(self.policy, feed_dict={self.input_actor: s}).ravel()
+        return np.random.choice([0, 1], 1, p=p)[0]
+    def train(self, s_old, a, r, s_new, done):
+        target_critic = np.zeros((1, 1))
+        target_actor = np.zeros((1, 2))
+
+        V_s_old = self.session.run(self.value_function, feed_dict={self.input_critic: s_old})
+        V_s_new = self.session.run(self.value_function, feed_dict={self.input_critic: s_new})
+
+        if done:
+            # The value function of s_new must be zero because the state leads to game end
+            target_critic[0][0] = r
+            target_actor[0][a] = r - V_s_old
+        else:
+            target_critic[0][0] = r + self.gamma * V_s_new
+            target_actor[0][a] = r + self.gamma * V_s_new - V_s_old
+
+        self.session.run([self.train_critic_ops, self.train_actor_ops], feed_dict={self.input_critic: s_old, self.target_critic: target_critic,
+                                                                                    self.input_actor: s_old, self.target_actor: target_actor})
+
+randseed = int(sys.argv[1])
+tfconfig = tf.ConfigProto(device_count={'GPU': 0})
+sess = tf.Session(config=tfconfig)
+random.seed(randseed)
+np.random.seed(randseed)
+tf.set_random_seed(randseed)
+param_dict_critic = {'gamma': 1.0, 'HL_nodes_critic': 200, 'adam_learning_rate_critic': 0.005}
+param_dict_actor = {'HL_nodes_actor': 200, 'adam_learning_rate_actor': 0.001}
+my_solver = SolverA2C(sess, param_dict_critic, param_dict_actor)
+env = gym.make('CartPole-v1')
+env.seed(randseed)
+
+solved = False
+results = []
+flog= open("a2ccurve",'a')
+print('',file=flog)
+maxep = 1000
+print(sys.argv[1],':',sys.argv[2])
+for e in tqdm.tqdm(range(maxep)):
+    s_old = s_reshaper(env.reset())
+    done = False
+    t = 0
+    while not done:
+        t += 1
+        a = my_solver.choose_action(s_old)
+        s_new, r, done, _ = env.step(a)
+        s_new = s_reshaper(s_new)
+        if done and t < 500: r = -100
+        if not solved: my_solver.train(s_old, a, r, s_new, done and t < 500)
+        s_old = s_new
+
+    results.append(t)
+    print(int(results[-1]),end='|',file=flog,flush=True)
+    if np.mean(results[-min(5, e):]) > 490:
+        solved = True
+        #print('Stable solution found - no more training!!!!!!!!!!!!')
+    else:
+        solved = False
+    #print('The episode %s lasted for %s steps' % (e, t))
+flog.close()
+
+doneep = maxep
+avgnum = 50
+results.reverse()
+record = results
+recordmean = [np.mean(record[i:i+avgnum]) for i in range(len(record)-avgnum+1)]
+for i,record in enumerate(recordmean):
+    if record < 490:
+        doneep = i
+        break
+fdoneeps = open('doneeps','a')
+print(doneep,end=',',file=fdoneeps)
+fdoneeps.close()
+
+if sys.argv[1]==sys.argv[2]:
+    fdoneeps = open('doneeps','r')
+    doneeps  = fdoneeps.read().splitlines()[0].split(",")[:-1]
+    plt.figure(111)
+    print(doneeps)
+    #xlimmin, xlimmax = min(doneeps) ,max(doneeps)
+    #print(xlimmin, xlimmax)
+    bins = np.linspace(0,maxep,50)
+    plt.hist(doneeps, bins=bins, normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
+    figname = 'fdoneeps'+".png"
+    plt.savefig(figname, figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+
+    COLORS = cycle(['black', 'red', 'orange', 'green', 'cyan', 'blue', 'purple'])
+    flog=open("a2ccurve","r")
+    lines=flog.read().splitlines()
+    flog.close()
+    for i in range(0,len(lines)):
+        color=next(COLORS)
+        record = lines[i].split("|")
+        record = record[:len(record)-1]
+        record = [float(strs) for strs in record]
+        avgnum = 50
+        recordmean = [np.mean(record[i:i+avgnum]) for i in range(len(record)-avgnum+1)]
+        plt.plot(record,label=i,color=color,alpha=0.1)
+        plt.plot(recordmean,label=i,color=color,alpha=1.0)
+    axes = plt.gca()
+    plt.savefig('a2ccurve.png', figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
