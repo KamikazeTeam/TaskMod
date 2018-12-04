@@ -2,5 +2,5 @@
 
 for ((i = 1; i <= $1; i++ ))
 do
-  python a2ctest.py --config a2c.json --seed $i --finalseed $1
+  python a2ctest.py --config $2 --seed $i --finalseed $1
 done
