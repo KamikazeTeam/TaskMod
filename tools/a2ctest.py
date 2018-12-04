@@ -90,7 +90,7 @@ class DenseModel:
             self.ah_values.append(ah_value)
         self.ay_value = tf.layers.dense(inputs=ah_value, units=self.output_num, activation=None, kernel_initializer=ainitializer, use_bias=False)#tf.nn.softmax
         self.ah_values.append(self.ay_value)
-        self.policy           = tf.nn.softmax(self.ay_value)
+        self.policy_logits    = tf.nn.softmax(self.ay_value)
         self.loss_actor       = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=self.ay_value, labels=self.target_actor))
 
         self.input_critic = tf.placeholder(tf.float32, [self.batch_num]+list(self.input_shape), name='input_critic')
@@ -117,45 +117,29 @@ class DenseModel:
         self.ch_values.append(self.cy_value)
         self.value_function   = self.cy_value
         self.loss_critic      = tf.reduce_sum(tf.square(self.target_critic - self.value_function))
-"""class CNNTrainer:
-    def __init__(self, env, args):
-        args.num_stack = 1
-        self.input_shape, self.num_actions = [args.num_stack]+list(env.observation_space.shape[0]), env.action_space.n
-        self.entropy_coeff, self.valuefc_coeff, self.max_grad_norm = 0.01, 0.5, 1.0 #args.entropy_coef, args.value_function_coeff, args.max_gradient_norm
-        with tf.name_scope('train_input'):
-            self.X_input        = tf.placeholder(tf.uint8, [None]+self.input_shape)
-            self.actions        = tf.placeholder(tf.int32, [None])
-            self.rewards        = tf.placeholder(tf.float32, [None])
-            self.advantages     = tf.placeholder(tf.float32, [None])
-            self.learning_rate  = tf.placeholder(tf.float32, [])
-        self.step_policy  = CNNPolicy(args, self.X_input, self.num_actions, reuse=False, is_training=False)
-        self.train_policy = CNNPolicy(args, self.X_input, self.num_actions, reuse=True , is_training=True)
-        with tf.variable_scope('train'): ###should in Trainer.__init__?
-            negative_log_prob_action  = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.train_policy.policy_logits, labels=self.actions)
-            self.policy_gradient_loss = tf.reduce_mean(self.advantages * negative_log_prob_action)
-            self.value_function_loss  = tf.reduce_mean(mse(tf.squeeze(self.train_policy.value_function), self.rewards))
-            self.entropy              = tf.reduce_mean(openai_entropy(self.train_policy.policy_logits))
-            self.loss = self.policy_gradient_loss - self.entropy*self.entropy_coeff + self.value_function_loss*self.valuefc_coeff
-            with tf.variable_scope("policy"): ###should in Trainer.__init__?
-                params = tf.trainable_variables()
-                grads  = tf.gradients(self.loss, params)
-                if self.max_grad_norm is not None: grads, grad_norm = tf.clip_by_global_norm(grads, self.max_grad_norm)
-                grads  = list(zip(grads, params))
-                self.optimize = tf.train.AdamOptimizer(learning_rate=self.learning_rate).apply_gradients(grads)
+class CNNFitter:
+    def __init__(self,sess,model,args):
+        self.sess, self.model = sess, model
+        self.GAMMA = args.reward_discount_factor
+        self.actions        = tf.placeholder(tf.int32, [None])
+        self.rewards        = tf.placeholder(tf.float32, [None])
+        self.advantages     = tf.placeholder(tf.float32, [None])
+        negative_log_prob_action  = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.model.policy_logits, labels=self.actions)
+        self.policy_gradient_loss = tf.reduce_mean(self.advantages * negative_log_prob_action)
+        self.value_function_loss  = tf.reduce_mean(mse(tf.squeeze(self.model.value_function), self.rewards))
+        self.entropy              = tf.reduce_mean(openai_entropy(self.model.policy_logits))
+        self.loss = self.policy_gradient_loss - self.entropy*0.01 + self.value_function_loss*0.5
+        self.optimize = tf.train.AdamOptimizer(learning_rate=0.1).minimize(self.loss)
+        self.sess.run(tf.global_variables_initializer())
     def getaction(self, s):
-        return np.random.choice([0, 1], 1, p=self.sess.run(self.model.policy, feed_dict={self.model.input_actor: s}).ravel())[0]
-    def update(self, s_old, a, r, s_new, done, actlr, crtlr):
-        target_critic = np.zeros((1, 1))
-        target_actor  = np.zeros((1, self.env.action_space.n))
-        V_s_old = self.sess.run(self.model.value_function, feed_dict={self.model.input_critic: s_old})
-        V_s_new = self.sess.run(self.model.value_function, feed_dict={self.model.input_critic: s_new})
-        if done: V_s_new = 0.0 # The value function of s_new must be zero because the state leads to game end
-        #if do not do this, experiments show that at last there will be a good probability that every episode end at only 9-10 steps
-        target_critic[0][0]= r + self.GAMMA * V_s_new
-        target_actor[0][a] = r + self.GAMMA * V_s_new - V_s_old
-        self.sess.run([self.train_critic_ops, self.train_actor_ops], feed_dict={ self.actlr: actlr, self.crtlr: crtlr,
-            self.model.input_critic: s_old, self.model.target_critic: target_critic, self.model.input_actor: s_old,  self.model.target_actor: target_actor})
-"""###########################################################################
+        #return noise_and_argmax(self.sess.run(self.model.policy_logits, feed_dict={self.model.input_actor: s}))
+        return np.random.choice(list(range(self.model.output_num)), 1, p=self.sess.run(self.model.policy_logits, feed_dict={self.model.input_actor: s}).ravel())[0]
+    def update(self, s_old, a, r, s_new, done):
+        values  = self.sess.run(self.model.value_function, feed_dict={self.model.input_actor: s_old})[:, 0]
+        rewards = 
+        advantages = rewards - values
+        self.sess.run([self.optimize], {self.model.input_actor: s_old, self.actions: a, self.rewards: rewards, self.advantages: advantages})
+###########################################################################
 class Fitter:
     def __init__(self,sess,model,args):
         self.sess, self.model = sess, model
@@ -166,7 +150,7 @@ class Fitter:
         self.train_critic_ops= tf.train.AdamOptimizer(self.crtlr).minimize(self.model.loss_critic)
         self.sess.run(tf.global_variables_initializer())
     def getaction(self, s):
-        return np.random.choice(list(range(self.model.output_num)), 1, p=self.sess.run(self.model.policy, feed_dict={self.model.input_actor: s}).ravel())[0]
+        return np.random.choice(list(range(self.model.output_num)), 1, p=self.sess.run(self.model.policy_logits, feed_dict={self.model.input_actor: s}).ravel())[0]
     def update(self, s_old, a, r, s_new, done):
         value_actlr, value_crtlr = self.LR_A, self.LR_C#*(1-t/MAX_STEPS), LR_C*(1-t/MAX_STEPS)
         target_critic = np.zeros((self.model.batch_num, 1))
@@ -275,7 +259,7 @@ def main():
     print((endtime-starttime)/60,'minutes',file=flog)
     print((endtime-starttime)/3600,'hours',file=flog)
     flog.close()
-    if args.seed==args.finalseed or int(args.seed)%50==0:
+    if args.seed==args.finalseed or int(args.seed)%10==0:
         doneeps  = [int(doneep) for doneep in open(config_args.doneepsname,'r').read().splitlines()[0].split(",")[:-1]]
         plt.figure(111)
         bins = np.linspace(0,config_args.max_episodes,50)
