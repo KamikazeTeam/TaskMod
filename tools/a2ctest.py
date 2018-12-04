@@ -75,16 +75,16 @@ class DenseModel:
         ah_value = self.input_actor
         self.ah_values.append(ah_value)
         for i,units in enumerate(self.unitslist):
-            if i==0:
-                ah_value = tf.layers.dense(inputs=ah_value, units=units, activation=None, kernel_initializer=ainitializer, use_bias=False)
-                #ah_value = tf.layers.batch_normalization(inputs=ah_value,scale=False,training=True)
-                ah_value = tf.nn.relu(ah_value)
+            #if i==0:
+            #    ah_value = tf.layers.dense(inputs=ah_value, units=units, activation=None, kernel_initializer=ainitializer, use_bias=False)
+            #    #ah_value = tf.layers.batch_normalization(inputs=ah_value,scale=False,training=True)
+            #    ah_value = tf.nn.relu(ah_value)
             #h_valueo= tf.identity(h_value)
             #ah_value = tf.layers.batch_normalization(inputs=ah_value,scale=False,training=True)#tf.contrib.layers.batch_norm(h_value)
             #ah_value = tf.nn.relu(ah_value)
-            #ah_value = tf.layers.dense(inputs=ah_value, units=units, activation=None, kernel_initializer=ainitializer, use_bias=False)
+            ah_value = tf.layers.dense(inputs=ah_value, units=units, activation=None, kernel_initializer=ainitializer, use_bias=False)
             #ah_value = tf.layers.batch_normalization(inputs=ah_value,scale=False,training=True)
-            #ah_value = tf.nn.relu(ah_value)
+            ah_value = tf.nn.relu(ah_value)
             #ah_value = tf.layers.dense(inputs=ah_value, units=units, activation=None, kernel_initializer=ainitializer, use_bias=False)
             #h_value = h_value + h_valueo
             self.ah_values.append(ah_value)
@@ -100,16 +100,16 @@ class DenseModel:
         ch_value = self.input_critic
         self.ch_values.append(ch_value)
         for i,units in enumerate(self.unitslist):
-            if i==0:
-                ch_value = tf.layers.dense(inputs=ch_value, units=units, activation=None, kernel_initializer=cinitializer, use_bias=False)
-                #ch_value = tf.layers.batch_normalization(inputs=ch_value,scale=False,training=True)
-                ch_value = tf.nn.relu(ch_value)
+            #if i==0:
+            #    ch_value = tf.layers.dense(inputs=ch_value, units=units, activation=None, kernel_initializer=cinitializer, use_bias=False)
+            #    #ch_value = tf.layers.batch_normalization(inputs=ch_value,scale=False,training=True)
+            #    ch_value = tf.nn.relu(ch_value)
             #h_valueo= tf.identity(h_value)
             #ch_value = tf.layers.batch_normalization(inputs=ch_value,scale=False,training=True)#tf.contrib.layers.batch_norm(h_value)
             #ch_value = tf.nn.relu(ch_value)
-            #ch_value = tf.layers.dense(inputs=ch_value, units=units, activation=None, kernel_initializer=cinitializer, use_bias=False)
+            ch_value = tf.layers.dense(inputs=ch_value, units=units, activation=None, kernel_initializer=cinitializer, use_bias=False)
             #ch_value = tf.layers.batch_normalization(inputs=ch_value,scale=False,training=True)
-            #ch_value = tf.nn.relu(ch_value)
+            ch_value = tf.nn.relu(ch_value)
             #ch_value = tf.layers.dense(inputs=ch_value, units=units, activation=None, kernel_initializer=cinitializer, use_bias=False)
             #h_value = h_value + h_valueo
             self.ch_values.append(ch_value)
@@ -275,7 +275,7 @@ def main():
     print((endtime-starttime)/60,'minutes',file=flog)
     print((endtime-starttime)/3600,'hours',file=flog)
     flog.close()
-    if args.seed==args.finalseed or int(args.seed)%10==0:
+    if args.seed==args.finalseed or int(args.seed)%50==0:
         doneeps  = [int(doneep) for doneep in open(config_args.doneepsname,'r').read().splitlines()[0].split(",")[:-1]]
         plt.figure(111)
         bins = np.linspace(0,config_args.max_episodes,50)
