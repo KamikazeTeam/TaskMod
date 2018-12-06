@@ -36,38 +36,29 @@ class BaseModel:
         self.unitslist = [int(num) for num in args.hypers.split('_')]
 
         self.input = tf.placeholder(tf.float32, [self.batch_num]+list(self.input_shape), name='input')
-
-        self.target_actor = tf.placeholder(tf.float32, [self.batch_num]+list([self.output_num]), name='target_actor')
-        ainitializer = tf.truncated_normal_initializer
-        self.ah_values = []
-        ah_value = self.input
-        self.ah_values.append(ah_value)
+        initializer= tf.truncated_normal_initializer
+        self.h_values = []
+        h_value = self.input
+        self.h_values.append(h_value)
         for i,units in enumerate(self.unitslist):
-            ah_value = tf.layers.dense(inputs=ah_value, units=units, activation=None, kernel_initializer=ainitializer, use_bias=False)
-            ah_value = tf.nn.relu(ah_value)
-            self.ah_values.append(ah_value)
-        self.ay_value = tf.layers.dense(inputs=ah_value, units=self.output_num, activation=None, kernel_initializer=ainitializer, use_bias=False)
-        self.ah_values.append(self.ay_value)
+            h_value = tf.layers.dense(inputs=h_value, units=units, activation=None, kernel_initializer=initializer, use_bias=False)
+            h_value = tf.nn.relu(h_value)
+            self.h_values.append(h_value)
+
+        self.ay_value = tf.layers.dense(inputs=h_value, units=self.output_num, activation=None, kernel_initializer=initializer, use_bias=False)
+        self.h_values.append(self.ay_value)
         self.policy_logits    = tf.nn.softmax(self.ay_value)
-        self.loss_actor       = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=self.ay_value, labels=self.target_actor))
+        self.target_actor     = tf.placeholder(tf.float32, [self.batch_num]+list([self.output_num]), name='target_actor')
+        self.loss_actor       = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.ay_value, labels=self.target_actor))
 
-        self.target_critic= tf.placeholder(tf.float32, [self.batch_num]+list([1]), name='target_critic')
-        cinitializer = tf.truncated_normal_initializer
-        self.ch_values = []
-        ch_value = self.input
-        self.ch_values.append(ch_value)
-        for i,units in enumerate(self.unitslist):
-            ch_value = tf.layers.dense(inputs=ch_value, units=units, activation=None, kernel_initializer=cinitializer, use_bias=False)
-            ch_value = tf.nn.relu(ch_value)
-            self.ch_values.append(ch_value)
-        self.cy_value = tf.layers.dense(inputs=ah_value, units=1, activation=None, kernel_initializer=cinitializer, use_bias=False) ###ch_value
-        self.ch_values.append(self.cy_value)
+        self.cy_value = tf.layers.dense(inputs=h_value, units=1, activation=None, kernel_initializer=initializer, use_bias=False)
+        self.h_values.append(self.cy_value)
         self.value_function   = self.cy_value
-        self.loss_critic      = tf.reduce_sum(tf.square(self.target_critic - self.value_function))
-###########################################################################
+        self.target_critic    = tf.placeholder(tf.float32, [self.batch_num]+list([1]), name='target_critic')
+        self.loss_critic      = tf.reduce_mean(tf.square(self.target_critic - self.value_function))
 class BaseFitter:
-    def __init__(self,sess,model,args):
-        self.sess, self.model = sess, model
+    def __init__(self,env,sess,args):
+        self.sess, self.model = sess, BaseModel(env,args)
         self.LR_A, self.LR_C, self.GAMMA, self.penalize = args.actor_learning_rate, args.critic_learning_rate, args.reward_discount_factor, args.penalize
         #self.actlr, self.crtlr = tf.placeholder(tf.float32, []), tf.placeholder(tf.float32, [])
         self.train_actor_ops = tf.train.AdamOptimizer(0.001).minimize(self.model.loss_actor)
@@ -88,10 +79,9 @@ class BaseFitter:
         self.sess.run([self.optimize],
         #self.sess.run([self.train_critic_ops, self.train_actor_ops],
             feed_dict={self.model.input: s_old, self.model.target_critic: target_critic, self.model.target_actor: target_actor})
-###########################################################################
 class BaseTrainer:
-    def __init__(self,env,model,fitter,args):
-        self.env, self.model, self.fitter, self.experiment_dir = env, model, fitter, args.experiment_dir
+    def __init__(self,env,sess,args):
+        self.env, self.fitter = env, BaseFitter(env,sess,args)
         self.target_score, self.avg_num, self.solved_rate = args.target_score, args.avg_num, args.solved_rate
         self.max_steps, self.max_episodes = args.max_steps, args.max_episodes
     def checksolved(self, episode_rewards):
@@ -99,7 +89,7 @@ class BaseTrainer:
     def checkfailed(self, episode_rewards):
         return episode_rewards[-1] < self.target_score
     def s_reshaper(self, s):
-        return np.reshape(s, [self.model.batch_num]+list(s.shape))
+        return np.reshape(s, [self.fitter.model.batch_num]+list(s.shape))
     def fit(self,f):
         episode_solved, episode_rewards = [False], [0.0]
         obs = self.env.reset()
@@ -163,9 +153,7 @@ def main():
         fitter = CNNFitter(sess,model,config_args)
         trainer = CNNTrainer(env,model,fitter,config_args)
     else:
-        model = BaseModel(env,config_args)
-        fitter = BaseFitter(sess,model,config_args)
-        trainer = BaseTrainer(env,model,fitter,config_args)
+        trainer = BaseTrainer(env,sess,config_args)
     print(args.seed,':',args.finalseed)
     fcurve = open(config_args.curvename,'a')
     print('',file=fcurve)
