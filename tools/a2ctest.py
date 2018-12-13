@@ -109,18 +109,18 @@ class BaseTrainer:
         for i in range(self.env_num):
             results.append(ls[i][-1]==value)
         return np.array(results)
-    def checksolved(self, episode_rewards):
-        return np.mean(episode_rewards[-min(self.avg_num,len(episode_rewards)):]) > self.target_score*self.solved_rate
     def checkfailed(self, done, episode_rewards):
         failed = []
         for i in range(self.env_num):
             failed.append( done[i] and episode_rewards[i][-1] < self.target_score)
         return failed
+    def checksolved(self, episode_rewards):
+        return np.mean(episode_rewards[-min(self.avg_num,len(episode_rewards)):]) > self.target_score*self.solved_rate
     def obs_stack_update(self, new_obs, old_obs_stack):
         updated_obs_stack = np.roll(old_obs_stack, shift=-1, axis=1)
         updated_obs_stack[:,-1,:] = new_obs[:]#,:]
         return updated_obs_stack
-    def obs_stack_reset(self, obs_stack, i):
+    def obs_stack_reseti(self, obs_stack, i):
         reseted_obs_stack = obs_stack
         reseted_obs_stack[i] *= 0
         reseted_obs_stack[i][-1] = self.env.reseti(i)
@@ -130,13 +130,14 @@ class BaseTrainer:
         episode_solved, episode_rewards = self.create_ls(False), self.create_ls(0.0)
         obs_stack = np.zeros([self.env_num]+self.fitter.model.input_shape, dtype=np.float32)
         for i in range(self.env_num):
-            obs_stack = self.obs_stack_reset(obs_stack,i)
+            obs_stack = self.obs_stack_reseti(obs_stack,i)
         for t in tqdm.tqdm(range(self.max_steps)):
             action = self.fitter.getaction(obs_stack)
-            new_obs, rew, done, info = self.env.step(action) ###### batched action
+            new_obs, rew, done, info = self.env.step(action)
             new_obs_stack = self.obs_stack_update(new_obs, obs_stack)
             self.add_ls_last(episode_rewards, rew)
-            if self.check_ls_last(episode_solved,False).any():
+            unsolved = self.check_ls_last(episode_solved,False).any()
+            if unsolved:
                 self.fitter.update(obs_stack, action, rew, new_obs_stack, self.checkfailed(done, episode_rewards))
             obs_stack = new_obs_stack
             for i in range(self.env_num):
@@ -144,7 +145,7 @@ class BaseTrainer:
                     print(int(episode_rewards[i][-1]),end='|',file=fcurves[i],flush=True)
                     episode_solved[i].append(self.checksolved(episode_rewards[i]))
                     episode_rewards[i].append(0.0)
-                    obs_stack = self.obs_stack_reset(obs_stack,i)
+                    obs_stack = self.obs_stack_reseti(obs_stack,i)
             if min([len(episode_rewards[i]) for i in range(self.env_num)]) > self.max_episodes: break
         self.close_fs(fcurves)
         fdoneeps = self.create_fs(config_args.doneepsname)
@@ -181,14 +182,14 @@ def main():
     config_args.hypers_model   = config_args.hypers[2].split('|')
     config_args.env_seed = int(args.seed)
     config_args.to_train = bool(args.to_train)
-    config_args.experiment_dir = "./"+args.config.replace('.', '_')+'_'+args.hypers+'_'# + str(config_args.env_seed) + "/"
+    config_args.experiment_dir = args.config.replace('.', '_')+'_'+args.hypers+'_/'# + str(config_args.env_seed) + "/"
     config_args.checkpoint_dir = config_args.experiment_dir + 'checkpoints/'
     config_args.summary_dir    = config_args.experiment_dir + 'summaries/'
     config_args.output_dir     = config_args.experiment_dir + 'output/'
     config_args.test_dir       = config_args.experiment_dir + 'test/'
     dirs = [config_args.checkpoint_dir, config_args.summary_dir, config_args.output_dir, config_args.test_dir]
-    #for dir_ in dirs:
-    #    if not os.path.exists(dir_): os.makedirs(dir_)
+    for dir_ in dirs:
+        if not os.path.exists(dir_): os.makedirs(dir_)
     config_args.configsname = config_args.experiment_dir+"configs"
     config_args.curvesname  = config_args.experiment_dir+"curves"
     config_args.doneepsname = config_args.experiment_dir+"doneeps"
@@ -214,7 +215,7 @@ def main():
         plt.figure(111)
         bins = np.linspace(0,config_args.max_episodes,50)
         plt.hist(doneeps, bins=bins, normed=False,facecolor='r',edgecolor='r',hold=0,alpha=0.2)
-        plt.savefig(config_args.doneepsname+'.png', figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+        plt.savefig(config_args.doneepsname.replace('/','T')+'.png', figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
         COLORS = cycle(['black', 'red', 'orange', 'green', 'cyan', 'blue', 'purple'])
         lines = []
         for i in range(env_num):
@@ -227,6 +228,6 @@ def main():
                 plt.figure(112)
                 plt.plot(record,color=color,alpha=0.1)
                 plt.plot(recordmean,color=color,alpha=1.0)
-        plt.savefig(config_args.curvesname+'.png', figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
+        plt.savefig(config_args.curvesname.replace('/','T')+'.png', figsize=(16, 9), dpi=300, facecolor="azure", bbox_inches='tight', pad_inches=0)
 if __name__ == '__main__':
     main()
