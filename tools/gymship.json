@@ -1,0 +1,22 @@
+{
+  "env_name": "shipS-v0",
+  "target_score": 200,
+  "avg_num": 5,
+  "solved_rate": 0.975,
+  "max_steps": 300000,
+  "max_episodes": 600,
+  "screen_width": 3,
+  "screen_height": 3,
+  "debrissizex": 1,
+  "debrissizey": 1,
+  "playersizex": 1,
+  "playersizey": 1,
+  "playerpostx": 1,
+  "playerposty": 1,
+  "updatespeed": 1,
+  "actionspeed": 1,
+  "generatefreq": 5,
+  "endcondition": 30,
+  "times": 20,
+  "timelag": 15
+}

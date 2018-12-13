@@ -1,7 +1,10 @@
 #!/bin/bash
 
-file=$4
+file=$2
 while IFS= read -r line
 do
-  bash a2ctrain $1 $2 $3 $line
+  for ((i = $3; i < $3+$4; i++ ))
+  do
+    python a2ctest.py --config $1 --hypers $line --seed $i --finalseed $[$3+$4-1]
+  done
 done <"$file"
