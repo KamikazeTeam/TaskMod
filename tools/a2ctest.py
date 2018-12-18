@@ -7,6 +7,7 @@ class Dense:
     def __init__(self,env,args):
         self.batch_num, self.stack_num = None, int(args.hypers_model[0]) #args.batch_num, args.stack_num *env.env_num
         self.unitslist = [int(num) for num in args.hypers_model[1].split('_')]
+        self.batch_normal = bool(int(args.hypers_model[2]))
         self.input_shape, self.output_num = [self.stack_num]+list(env.observation_space.shape), env.action_space.n
         self.input = tf.placeholder(tf.float32, [self.batch_num]+self.input_shape, name='input')
         self.train = tf.placeholder(tf.bool, name='phase')
@@ -17,7 +18,8 @@ class Dense:
         self.h_values.append(h_value)
         for i,units in enumerate(self.unitslist):
             h_value = tf.layers.dense(inputs=h_value, units=units, activation=None, kernel_initializer=initializer, use_bias=False)
-            #h_value = tf.layers.batch_normalization(inputs=h_value,scale=False,training=self.train)
+            if self.batch_normal:
+                h_value = tf.layers.batch_normalization(inputs=h_value,scale=False,training=self.train)
             h_value = tf.nn.relu(h_value)
             self.h_values.append(h_value)
         self.ay_value = tf.layers.dense(inputs=h_value, units=self.output_num, activation=None, kernel_initializer=initializer, use_bias=False)
@@ -84,7 +86,7 @@ class BaseTrainer:
         self.batch_num = self.env_num * self.roll_num
         self.env = MultiEnv(args.env_name, args.env_seed, self.env_num)
         self.fitter = BaseFitter(self.env,sess,args)
-        self.target_score, self.avg_num, self.solved_rate = args.target_score, args.avg_num, args.solved_rate
+        self.target_score, self.avg_num, self.solved_rate, self.max_unsolvedp = args.target_score, args.avg_num, args.solved_rate, float(args.hypers_trainer[2])#args.max_unsolvedp
         self.max_steps, self.max_episodes = args.max_steps, args.max_episodes
     def create_fs(self, fname, message=None):
         fs = []
@@ -136,8 +138,8 @@ class BaseTrainer:
             new_obs, rew, done, info = self.env.step(action)
             new_obs_stack = self.obs_stack_update(new_obs, obs_stack)
             self.add_ls_last(episode_rewards, rew)
-            unsolved = self.check_ls_last(episode_solved,False).any()
-            if unsolved:
+            unsolved = np.mean(self.check_ls_last(episode_solved,False))
+            if unsolved > self.max_unsolvedp:
                 self.fitter.update(obs_stack, action, rew, new_obs_stack, self.checkfailed(done, episode_rewards))
             obs_stack = new_obs_stack
             for i in range(self.env_num):
@@ -223,7 +225,7 @@ def main():
         for j in range(len(lines[0])):
             color=next(COLORS)
             for i in range(env_num):
-                record, avgnum = [float(strs) for strs in lines[i][j].split("|")[:-1][:config_args.max_episodes]], 50 ###
+                record, avgnum = [float(strs) for strs in lines[i][j].split("|")[:-1][:config_args.max_episodes]], 10 ###
                 recordmean = [np.mean(record[k:k+avgnum]) for k in range(len(record)-avgnum+1)]
                 plt.figure(112)
                 plt.plot(record,color=color,alpha=0.1)
