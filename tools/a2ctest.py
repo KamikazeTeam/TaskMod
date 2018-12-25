@@ -69,11 +69,14 @@ class MultiEnv:
         self.observation_space = self.envs[0].observation_space
         self.action_space = self.envs[0].action_space
     def reseti(self,i):
-        return self.envs[i].reset()
+        obs = self.envs[i].reset()
+        obs = np.multiply(obs,np.array([10,1,10,1]))
+        return obs
     def step(self, actions):
         obss, rews, dones, infos = [], [], [], []
         for ienv in range(len(self.envs)):
             obs, rew, done, info = self.envs[ienv].step(actions[ienv])
+            obs = np.multiply(obs,np.array([10,1,10,1]))
             obss.append(obs)
             rews.append(rew)
             dones.append(done)
